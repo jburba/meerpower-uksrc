@@ -4,11 +4,69 @@ import matplotlib
 from scipy import signal
 import sys
 import os
-sys.path.insert(1, '/idia/projects/hi_im/meerpower/meerpower')
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+
+parser.add_argument(
+    "--meerpower-path",
+    type=str,
+    default="/idia/projects/hi_im/meerpower/"
+    help="Path to meerpower repository.  Defaults to "
+         "'/idia/projects/hi_im/meerpower/'."
+)
+parser.add_argument(
+    "--survey",
+    type=str,
+    default="2021",
+    help="One of either '2019' or '2021'."
+)
+parser.add_argument(
+    "--gal-cat",
+    type=str,
+    default="gama",
+    help="Galaxy catalog name.  Can be one of 'gama', 'wigglez', or 'cmass'."
+)
+parser.add_argument(
+    "--do2DTF",
+    action="store_true",
+    help="Compute the two-dimensional foreground transfer function."
+)
+parser.add_argument(
+    "--doHIauto",
+    action="store_true",
+    help="Compute the autocorrlation power spectrum, i.e. HI x HI."
+)
+parser.add_argument(
+    "--doMock",
+    action="store_true",
+    help="Use mock data for consistency checks."
+)
+parser.add_argument(
+    "--mockindx",
+    type=int,
+    help="Mock file index.  If you pass '--doMock' and no value for "
+         "'--mockindx' is passed, a random index will be used."
+)
+
+args = parser.parse_args()
+
+sys.path.insert(1, args.meerpower_path)
 import Init
 import plot
 
-def RunPipeline(survey,gal_cat,N_fg,gamma=1.4,kcuts=None,do2DTF=False,doHIauto=False,tukey_alpha=0.1):
+def RunPipeline(
+    survey,
+    gal_cat,
+    N_fg,
+    gamma=1.4,
+    kcuts=None,
+    do2DTF=False,
+    doHIauto=False,
+    doMock=False,
+    mockindx=None,
+    tukey_alpha=0.1
+):
     '''
     Use for looping over full pipeline with different choices of inputs for purposes
     of transfer function building. Input choices from below:
@@ -17,6 +75,12 @@ def RunPipeline(survey,gal_cat,N_fg,gamma=1.4,kcuts=None,do2DTF=False,doHIauto=F
     # N_fg = int (the number of PCA components to remove)
     # gamma = float or None (resmoothing parameter)
     # kcuts = [kperpmin,kparamin,kperpmax,kparamax] or None (exclude areas of k-space from spherical average)]
+    # do2DTF = Compute the two-dimensional foreground transfer function
+    # doHIauto = Compute the autocorrlation power spectrum, i.e. HI x HI
+    # doMock = Use mock data for consistency checks
+    # mockindx = Mock file index.  If None (default), choose a random index
+    # tukey_alpha = Tukey window shape parameter
+    # mp_path = Path to meerpower repository
     '''
     # Load data and run some pre-processing steps:
     doMock = False # Set True to load mock data for consistency checks
@@ -31,8 +95,8 @@ def RunPipeline(survey,gal_cat,N_fg,gamma=1.4,kcuts=None,do2DTF=False,doHIauto=F
         numin,numax = 971,1023.8 # default setting in Init.ReadIn()
     MKmap,w_HI,W_HI,counts_HI,dims,ra,dec,nu,wproj = Init.ReadIn(map_file,numin=numin,numax=numax)
     if doMock==True:
-        mockindx = np.random.randint(100)
-        mockindx = 1
+        if mockindx is None:
+            mockindx = np.random.randint(100)
         MKmap_mock = np.load('/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam_%s.npy'%mockindx)
     nx,ny,nz = np.shape(MKmap)
 
@@ -384,20 +448,18 @@ def RunPipeline(survey,gal_cat,N_fg,gamma=1.4,kcuts=None,do2DTF=False,doHIauto=F
 
 
 
-do2DTF = False
-doHIauto = False
 
 #survey = '2019'
 #gal_cat = 'wigglez'
 #gal_cat = 'cmass'
 
-survey = '2021'
-gal_cat = 'gama'
+# survey = '2021'
+# gal_cat = 'gama'
 
-if gal_cat=='cmass' or gal_cat=='wigglez': N_fgs = [12,10,8,15,6]
-if gal_cat=='gama': N_fgs = [8,12,6,10,15]
+# if gal_cat=='cmass' or gal_cat=='wigglez': N_fgs = [12,10,8,15,6]
+# if gal_cat=='gama': N_fgs = [8,12,6,10,15]
 
-N_fgs = [10,8,12,6,5,7,9,11,13,14,15,16,17,18,19,20]
+# N_fgs = [10,8,12,6,5,7,9,11,13,14,15,16,17,18,19,20]
 
 #if gal_cat=='cmass': kcuts = [0.052,0.031,0.15,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
 #if gal_cat=='gama': kcuts = [0.052,0.031,0.175,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
@@ -414,4 +476,14 @@ for i in range(len(N_fgs)):
 N_fg = 10
 tukey_alphas = [0.5,0.1,0.2,0.8,1]
 for i in range(len(tukey_alphas)):
-    RunPipeline(survey,gal_cat,N_fg,kcuts=kcuts,do2DTF=do2DTF,doHIauto=doHIauto,tukey_alpha=tukey_alphas[i])
+    RunPipeline(
+        args.survey,
+        args.gal_cat,
+        N_fg,
+        kcuts=kcuts,
+        do2DTF=args.do2DTF,
+        doHIauto=args.doHIauto,
+        doMock=args.doMock,
+        mockindx=args.mockindx,
+        tukey_alpha=tukey_alphas[i]
+    )
