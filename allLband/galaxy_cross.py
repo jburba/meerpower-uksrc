@@ -4,16 +4,16 @@ import matplotlib
 from scipy import signal
 import sys
 import os
-from argparse import ArgumentParser
+from jsonargparse import ArgumentParser
+from jsonargparse.typing import List
+from pathlib import Path
 
 parser = ArgumentParser()
 
 parser.add_argument(
     "--meerpower-path",
     type=str,
-    default="/idia/projects/hi_im/meerpower/"
-    help="Path to meerpower repository.  Defaults to "
-         "'/idia/projects/hi_im/meerpower/'."
+    help="Path to meerpower repository."
 )
 parser.add_argument(
     "--survey",
@@ -22,10 +22,21 @@ parser.add_argument(
     help="One of either '2019' or '2021'."
 )
 parser.add_argument(
+    "--filepath-HI",
+    type=str,
+    help="Path to an HI map file in FITS format."
+)
+parser.add_argument(
     "--gal-cat",
     type=str,
     default="gama",
     help="Galaxy catalog name.  Can be one of 'gama', 'wigglez', or 'cmass'."
+)
+parser.add_argument(
+    "--filepath-g",
+    type=str,
+    help="Path to a galaxy catalog file in txt format (wigglez) or FITS "
+         "format (gama or cmass)."
 )
 parser.add_argument(
     "--do2DTF",
@@ -48,6 +59,51 @@ parser.add_argument(
     help="Mock file index.  If you pass '--doMock' and no value for "
          "'--mockindx' is passed, a random index will be used."
 )
+parser.add_argument(
+    "--mockfilepath-HI",
+    type=str,
+    help="Path and base name for a set of numpy-readable, indexed mock HI "
+         "files.  For example, if the mock data are stored in "
+         "'/path/to/mocks_{index}.npy', you would pass "
+         "'--mockfilepath-HI /path/to/mocks' and exclude the '_{index}.npy' "
+         "suffix."
+)
+parser.add_argument(
+    "--mockfilepath-g",
+    type=str,
+    help="Path and base name for a set of numpy-readable, indexed mock galaxy "
+         "files.  For example, if the mock data are stored in "
+         "'/path/to/mocks_{index}.npy', you would pass "
+         "'--mockfilepath-gal /path/to/mocks' and exclude hte '_{index}.npy' "
+         "suffix."
+)
+parser.add_argument(
+    "--Nfg",
+    dest="N_fg",
+    type=int,
+    default=10,
+    help="Number of PCA FG modes.  Defaults to 10."
+)
+parser.add_argument(
+    "--gamma",
+    type=float,
+    default=1.4,
+    help="Resmoothing factor.  Defaults to 1.4."
+)
+parser.add_argument(
+    "--tukey-alphas",
+    type=List[float],
+    default=[0.5, 0.1, 0.2, 0.8, 1],
+    help="List of Tukey window shape parameter values.  Passed as a list of "
+         "floats with no spaces between commas.  A single value can be passed "
+         "as '--tukey-alphas [0.1]'.  Multiple values would be passed as "
+         "'--tukey-alphas [0.1,0.5,1]'.  Defaults to [0.5, 0.1, 0.2, 0.8, 1]."
+)
+parser.add_argument(
+    "--out-dir",
+    type=str,
+    help="Path to a directory for output files."
+)
 
 args = parser.parse_args()
 
@@ -57,7 +113,9 @@ import plot
 
 def RunPipeline(
     survey,
+    filepath_HI,
     gal_cat,
+    filepath_g,
     N_fg,
     gamma=1.4,
     kcuts=None,
@@ -65,13 +123,18 @@ def RunPipeline(
     doHIauto=False,
     doMock=False,
     mockindx=None,
+    mockfilepath_HI=None,
+    mockfilepath_g=None,
+    out_dir="./",
     tukey_alpha=0.1
 ):
     '''
     Use for looping over full pipeline with different choices of inputs for purposes
     of transfer function building. Input choices from below:
     # survey = '2019' or '2021'
+    # map_file = Path to a HI map file in FITS format
     # gal_cat = 'wigglez', 'cmass', or 'gama'
+    # filepath_g = Path to a galaxy catalog file in txt format (wigglez) or FITS format (gama or cmass).
     # N_fg = int (the number of PCA components to remove)
     # gamma = float or None (resmoothing parameter)
     # kcuts = [kperpmin,kparamin,kperpmax,kparamax] or None (exclude areas of k-space from spherical average)]
@@ -79,25 +142,36 @@ def RunPipeline(
     # doHIauto = Compute the autocorrlation power spectrum, i.e. HI x HI
     # doMock = Use mock data for consistency checks
     # mockindx = Mock file index.  If None (default), choose a random index
+    # mockfilepath_HI = Path and base name for a set of numpy-readable, indexed files containing mock HI data.
+    #                   For example, if the mock data are stored in '/path/to/mocks_{index}.npy', you would pass
+    #                   'mockfilepath_HI=/path/to/mocks' and exclude the '_{index}.npy' suffix.
+    # mockfilepath_g = Path and base name for a set of numpy-readable, indexed files containing mock galaxy data.
+    #                  For example, if the mock data are stored in '/path/to/mocks_{index}.npy', you would pass
+    #                  'mockfilepath_g=/path/to/mocks' and exclude the '_{index}.npy' suffix.
+    # out_dir = Path to the meerpower
     # tukey_alpha = Tukey window shape parameter
     # mp_path = Path to meerpower repository
     '''
+    if not isinstance(out_dir, Path):
+        out_dir = Path(out_dir)
+
     # Load data and run some pre-processing steps:
     doMock = False # Set True to load mock data for consistency checks
 
     if survey=='2019':
-        filestem = '/idia/projects/hi_im/raw_vis/katcali_output/level6_output/p0.3d/p0.3d_sigma2.5_iter2/'
-        map_file = filestem + 'Nscan366_Tsky_cube_p0.3d_sigma2.5_iter2.fits'
+        # filestem = '/idia/projects/hi_im/raw_vis/katcali_output/level6_output/p0.3d/p0.3d_sigma2.5_iter2/'
+        # map_file = filestem + 'Nscan366_Tsky_cube_p0.3d_sigma2.5_iter2.fits'
         numin,numax = 971,1023.2
     if survey=='2021':
-        filestem = '/idia/users/jywang/MeerKLASS/calibration2021/level6/0.3/sigma4_count40/re_cali1_round5/'
-        map_file = filestem + 'Nscan961_Tsky_cube_p0.3d_sigma4.0_iter2.fits'
+        # filestem = '/idia/users/jywang/MeerKLASS/calibration2021/level6/0.3/sigma4_count40/re_cali1_round5/'
+        # map_file = filestem + 'Nscan961_Tsky_cube_p0.3d_sigma4.0_iter2.fits'
         numin,numax = 971,1023.8 # default setting in Init.ReadIn()
-    MKmap,w_HI,W_HI,counts_HI,dims,ra,dec,nu,wproj = Init.ReadIn(map_file,numin=numin,numax=numax)
+    MKmap,w_HI,W_HI,counts_HI,dims,ra,dec,nu,wproj = Init.ReadIn(filepath_HI,numin=numin,numax=numax)
     if doMock==True:
         if mockindx is None:
             mockindx = np.random.randint(100)
-        MKmap_mock = np.load('/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam_%s.npy'%mockindx)
+        # MKmap_mock = np.load('/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam_%s.npy'%mockindx)
+        MKmap_mock = np.load(mockfilepath_HI + '_%s.npy'%mockindx)
     nx,ny,nz = np.shape(MKmap)
 
     ### Remove incomplete LoS pixels from maps:
@@ -126,7 +200,7 @@ def RunPipeline(
     r = 0.9 # cross-correlation coefficient
     D_dish = 13.5 # Dish-diameter [metres]
     theta_FWHM,R_beam = telescope.getbeampars(D_dish,np.median(nu))
-    gamma = 1.4 # resmoothing factor - set = None to have no resmoothing
+    # gamma = 1.4 # resmoothing factor - set = None to have no resmoothing
     #gamma = None
 
     ### Map resmoothing:
@@ -232,25 +306,31 @@ def RunPipeline(
     if survey=='2019':
         if gal_cat=='wigglez':
             if doMock==False: # Read-in WiggleZ galaxies (provided by Laura):
-                galcat = np.genfromtxt('/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11data.dat', skip_header=1)
+                # galcat = np.genfromtxt('/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11data.dat', skip_header=1)
+                galcat = np.genfromtxt(filepath_g, skip_header=1)
                 ra_g,dec_g,z_g = galcat[:,0],galcat[:,1],galcat[:,2]
-            if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat_%s.npy'%mockindx)
+            # if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat_%s.npy'%mockindx)
+            if doMock==True: ra_g,dec_g,z_g = np.load(mockfilepath_g + '_%s.npy'%mockindx)
             z_Lband = (z_g>zmin) & (z_g<zmax) # Cut redshift to MeerKAT IM range:
             ra_g,dec_g,z_g = ra_g[z_Lband],dec_g[z_Lband],z_g[z_Lband]
         if gal_cat=='cmass':
             if doMock==False: # Read-in BOSS-CMASS galaxies (in Yi-Chao's ilifu folder - also publically available from: https://data.sdss.org/sas/dr12/boss/lss):
-                filename = '/idia/users/ycli/SDSS/dr12/galaxy_DR12v5_CMASSLOWZTOT_North.fits.gz'
-                hdu = fits.open(filename)
+                # filename = '/idia/users/ycli/SDSS/dr12/galaxy_DR12v5_CMASSLOWZTOT_North.fits.gz'
+                # hdu = fits.open(filename)
+                hdu = fits.open(filepath_g)
                 ra_g,dec_g,z_g = hdu[1].data['RA'],hdu[1].data['DEC'],hdu[1].data['Z']
-            if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat_%s.npy'%mockindx)
+            # if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat_%s.npy'%mockindx)
+            if doMock==True: ra_g,dec_g,z_g = np.load(mockfilepath_g + '_%s.npy'%mockindx)
             ra_g,dec_g,z_g = Init.pre_process_2019Lband_CMASS_galaxies(ra_g,dec_g,z_g,ra,dec,zmin,zmax,W_HI)
 
     if survey=='2021':
         if doMock==False: # Read-in GAMA galaxies:
-            Fits = '/idia/projects/hi_im/GAMA_DR4/G23TilingCatv11.fits'
-            hdu = fits.open(Fits)
+            # Fits = '/idia/projects/hi_im/GAMA_DR4/G23TilingCatv11.fits'
+            # hdu = fits.open(Fits)
+            hdu = fits.open(filepath_g)
             ra_g,dec_g,z_g = hdu[1].data['RA'],hdu[1].data['DEC'],hdu[1].data['Z']
-        if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat_%s.npy'%mockindx)
+        # if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat_%s.npy'%mockindx)
+        if doMock==True: ra_g,dec_g,z_g = np.load(mockfilepath_g + '_%s.npy'%mockindx)
         # Remove galaxies outside bulk GAMA footprint so they don't bias the simple binary selection function
         GAMAcutmask = (ra_g>ramin_gal) & (ra_g<ramax_gal) & (dec_g>decmin_gal) & (dec_g<decmax_gal) & (z_g>zmin) & (z_g<zmax)
         ra_g,dec_g,z_g = ra_g[GAMAcutmask],dec_g[GAMAcutmask],z_g[GAMAcutmask]
@@ -301,7 +381,8 @@ def RunPipeline(
                 W_g_rg = np.zeros(np.shape(n_g_rg))
                 for i in range(1,nrand):
                     plot.ProgressBar(i,nrand)
-                    galcat = np.genfromtxt( '/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11rand%s.dat' %'{:04d}'.format(i), skip_header=1)
+                    # galcat = np.genfromtxt( '/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11rand%s.dat' %'{:04d}'.format(i), skip_header=1)
+                    galcat = np.genfromtxt(filepath_g.replace('data.dat', 'rand%s.dat' %'{:04d}'.format(i)), skip_header=1)
                     ra_g_rand,dec_g_rand,z_g_rand = galcat[:,0],galcat[:,1],galcat[:,2]
                     z_Lband = (z_g_rand>zmin) & (z_g_rand<zmax) # Cut redshift to MeerKAT IM range:
                     ra_g_rand,dec_g_rand,z_g_rand = ra_g_rand[z_Lband],dec_g_rand[z_Lband],z_g_rand[z_Lband]
@@ -398,8 +479,12 @@ def RunPipeline(
 
 
     # Calculate power specs (to get k's for TF):
-    if doHIauto==False: Pk_gHI,k,nmodes = power.Pk(MKmap_clean_rg,n_g_rg,dims_rg,kbins,corrtype='Cross',w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts)
-    if doHIauto==True: Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
+    if doHIauto==False:
+        Pk_gHI,k,nmodes = power.Pk(MKmap_clean_rg,n_g_rg,dims_rg,kbins,corrtype='Cross',w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts)
+        # FIXME: add some code to save the raw power spectrum?
+    if doHIauto==True:
+        Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
+        # FIXME: add some code to save the raw power spectrum?
 
     LoadTF = False
     Nmock = 500
@@ -407,22 +492,25 @@ def RunPipeline(
     else: gamma_label = str(gamma)
     if kcuts is None: kcuts_label = 'nokcuts'
     else: kcuts_label = 'withkcuts'
-    mockfilepath_HI = '/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam'
-    if gal_cat=='wigglez': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat'
-    if gal_cat=='cmass': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat'
-    if gal_cat=='gama': mockfilepath_g = '/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat'
+    # mockfilepath_HI = '/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam'
+    # if gal_cat=='wigglez': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat'
+    # if gal_cat=='cmass': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat'
+    # if gal_cat=='gama': mockfilepath_g = '/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat'
 
+    out_dir_tf = out_dir_tf = out_dir / f'{survey}Lband' / gal_cat / 'TFdata'
     if do2DTF==False:
         if doHIauto==False:
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
-            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
+            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
+            TFfile = out_dir_tf / 'T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label + '_tukeyHI=%s'%tukey_alpha
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
                                                         w_HI_rg=w_HI_rg,W_HI_rg=W_HI_rg,w_g_rg=w_g_rg,W_g_rg=W_g_rg,kcuts=kcuts,
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF)
         if doHIauto==True:
-            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
+            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
+            TFfile = out_dir_tf / 'T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'HIauto',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -432,14 +520,16 @@ def RunPipeline(
         kperpbins = np.linspace(0.008,0.3,34)
         kparabins = np.linspace(0.003,0.6,22)
         if doHIauto==False:
-            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
+            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
+            TFfile = out_dir_tf / 'T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
             T2d_wsub_i, T2d_nosub_i,k2d  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
                                                         w_HI_rg=w_HI_rg,W_HI_rg=W_HI_rg,w_g_rg=w_g_rg,W_g_rg=W_g_rg,kcuts=kcuts,
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF,TF2D=True,kperpbins=kperpbins,kparabins=kparabins)
         if doHIauto==True:
-            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
+            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
+            TFfile = out_dir_tf / 'T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
             T2d_wsub_i, T2d_nosub_i,k2d  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'HIauto',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -473,17 +563,26 @@ for i in range(len(N_fgs)):
     RunPipeline(survey,gal_cat,N_fgs[i],kcuts=kcuts,do2DTF=do2DTF,doHIauto=doHIauto)
 '''
 
-N_fg = 10
-tukey_alphas = [0.5,0.1,0.2,0.8,1]
-for i in range(len(tukey_alphas)):
-    RunPipeline(
+for i in range(len(args.tukey_alphas)):
+    def RunPipeline(
         args.survey,
+        args.filepath_HI,
         args.gal_cat,
-        N_fg,
+        args.filepath_g,
+        args.N_fg,
+        gamma=args.gamma,
         kcuts=kcuts,
         do2DTF=args.do2DTF,
         doHIauto=args.doHIauto,
         doMock=args.doMock,
         mockindx=args.mockindx,
-        tukey_alpha=tukey_alphas[i]
+        mockfilepath_HI=args.mockfilepath_HI,
+        mockfilepath_g=args.mockfilepath_g,
+        out_dir=args.out_dir,
+        tukey_alpha=args.tukey_alphas[i]
     )
+
+# FIXME: I need to add some code ported from the notebook to compute the final
+#        power spectra with the transfer function corrections applied.
+#        I also need to add some code to save plots so we know what the outputs
+#        look like.
