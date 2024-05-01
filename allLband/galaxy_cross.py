@@ -564,7 +564,7 @@ for i in range(len(N_fgs)):
 '''
 
 for i in range(len(args.tukey_alphas)):
-    def RunPipeline(
+    RunPipeline(
         args.survey,
         args.filepath_HI,
         args.gal_cat,
