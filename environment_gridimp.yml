@@ -12,6 +12,7 @@ dependencies:
   - pyfftw
   - classylss
   - pmesh
+  - jsonargparse
 
   # Build conda environment with:
   # conda env create -f environment_gridimp.yml
