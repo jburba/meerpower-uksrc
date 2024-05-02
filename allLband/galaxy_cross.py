@@ -121,7 +121,7 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-sys.path.insert(1, args.meerpower_path)
+sys.path.insert(1, Path(args.meerpower_path) / 'meerpower')
 import Init
 import plot
 
