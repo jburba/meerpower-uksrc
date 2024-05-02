@@ -7,6 +7,7 @@ import os
 from jsonargparse import ArgumentParser, ActionConfigFile
 from jsonargparse.typing import List
 from pathlib import Path
+from pprint import pprint
 
 parser = ArgumentParser()
 
@@ -120,8 +121,10 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+print("Command Line Arguments:")
+pprint(args.__dict__)
 
-sys.path.insert(1, Path(args.meerpower_path) / 'meerpower')
+sys.path.insert(1, (Path(args.meerpower_path) / 'meerpower').as_posix())
 import Init
 import plot
 
