@@ -4,7 +4,7 @@ import matplotlib
 from scipy import signal
 import sys
 import os
-from jsonargparse import ArgumentParser
+from jsonargparse import ArgumentParser, ActionConfigFile
 from jsonargparse.typing import List
 from pathlib import Path
 
@@ -113,6 +113,10 @@ parser.add_argument(
     "--out-dir",
     type=str,
     help="Path to a directory for output files."
+)
+parser.add_argument(
+    "--config",
+    action=ActionConfigFile
 )
 
 args = parser.parse_args()
