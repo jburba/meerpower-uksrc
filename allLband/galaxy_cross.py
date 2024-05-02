@@ -39,6 +39,11 @@ parser.add_argument(
          "format (gama or cmass)."
 )
 parser.add_argument(
+    "--LoadTF",
+    action="store_true",
+    help="If passed, load an existing transfer function from disk."
+)
+parser.add_argument(
     "--do2DTF",
     action="store_true",
     help="Compute the two-dimensional foreground transfer function."
@@ -58,6 +63,11 @@ parser.add_argument(
     type=int,
     help="Mock file index.  If you pass '--doMock' and no value for "
          "'--mockindx' is passed, a random index will be used."
+)
+parser.add_argument(
+    "--Nmock",
+    type=int,
+    help="Number of mock files."
 )
 parser.add_argument(
     "--mockfilepath-HI",
@@ -119,10 +129,12 @@ def RunPipeline(
     N_fg,
     gamma=1.4,
     kcuts=None,
+    LoadTF=False,
     do2DTF=False,
     doHIauto=False,
     doMock=False,
     mockindx=None,
+    Nmock=500,
     mockfilepath_HI=None,
     mockfilepath_g=None,
     out_dir="./",
@@ -486,8 +498,8 @@ def RunPipeline(
         Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
         # FIXME: add some code to save the raw power spectrum?
 
-    LoadTF = False
-    Nmock = 500
+    # LoadTF = False
+    # Nmock = 500
     if gamma is None: gamma_label = 'None'
     else: gamma_label = str(gamma)
     if kcuts is None: kcuts_label = 'nokcuts'
@@ -497,7 +509,7 @@ def RunPipeline(
     # if gal_cat=='cmass': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat'
     # if gal_cat=='gama': mockfilepath_g = '/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat'
 
-    out_dir_tf = out_dir_tf = out_dir / f'{survey}Lband' / gal_cat / 'TFdata'
+    out_dir_tf = out_dir / f'{survey}Lband' / gal_cat / 'TFdata'
     if do2DTF==False:
         if doHIauto==False:
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
@@ -572,10 +584,12 @@ for i in range(len(args.tukey_alphas)):
         args.N_fg,
         gamma=args.gamma,
         kcuts=kcuts,
+        LoadTF=args.LoadTF,
         do2DTF=args.do2DTF,
         doHIauto=args.doHIauto,
         doMock=args.doMock,
         mockindx=args.mockindx,
+        Nmock=args.Nmock,
         mockfilepath_HI=args.mockfilepath_HI,
         mockfilepath_g=args.mockfilepath_g,
         out_dir=args.out_dir,
