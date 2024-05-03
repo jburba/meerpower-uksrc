@@ -521,7 +521,7 @@ def RunPipeline(
         if doHIauto==False:
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
             # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
-            TFfile = out_dir_tf / 'T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label + '_tukeyHI=%s'%tukey_alpha
+            TFfile = out_dir_tf / ('T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label + '_tukeyHI=%s'%tukey_alpha)
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -529,7 +529,7 @@ def RunPipeline(
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF)
         if doHIauto==True:
             # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
-            TFfile = out_dir_tf / 'T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label
+            TFfile = out_dir_tf / ('T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label)
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'HIauto',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -540,7 +540,7 @@ def RunPipeline(
         kparabins = np.linspace(0.003,0.6,22)
         if doHIauto==False:
             # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
-            TFfile = out_dir_tf / 'T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
+            TFfile = out_dir_tf / ('T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label))
             T2d_wsub_i, T2d_nosub_i,k2d  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -548,7 +548,7 @@ def RunPipeline(
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF,TF2D=True,kperpbins=kperpbins,kparabins=kparabins)
         if doHIauto==True:
             # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
-            TFfile = out_dir_tf / 'T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
+            TFfile = out_dir_tf / ('T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label))
             T2d_wsub_i, T2d_nosub_i,k2d  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'HIauto',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
