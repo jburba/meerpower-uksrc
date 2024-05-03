@@ -517,6 +517,7 @@ def RunPipeline(
     # if gal_cat=='gama': mockfilepath_g = '/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat'
 
     out_dir_tf = out_dir / f'{survey}Lband' / gal_cat / 'TFdata'
+    out_dir_tf.mkdir(exist_ok=True, parents=True)
     if do2DTF==False:
         if doHIauto==False:
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
