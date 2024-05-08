@@ -500,10 +500,13 @@ def RunPipeline(
     # Calculate power specs (to get k's for TF):
     if doHIauto==False:
         Pk_gHI,k,nmodes = power.Pk(MKmap_clean_rg,n_g_rg,dims_rg,kbins,corrtype='Cross',w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts)
-        # FIXME: add some code to save the raw power spectrum?
+        if gamma is not None: 
+            theta_FWHM_max,R_beam_max = telescope.getbeampars(D_dish,np.min(nu))
+            R_beam_gam = R_beam_max * np.sqrt(gamma)
+        else: R_beam_gam = np.copy(R_beam)
+        pkmod,k = model.PkMod(Pmod,dims_rg,kbins,b_HI,b_g,f,sig_v,Tbar1=Tbar,Tbar2=1,r=r,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix1=s_pix,s_para1=s_para,interpkbins=True,MatterRSDs=True,gridinterp=True)[0:2]
     if doHIauto==True:
         Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
-        # FIXME: add some code to save the raw power spectrum?
 
     # LoadTF = False
     # Nmock = 500
@@ -522,7 +525,7 @@ def RunPipeline(
         if doHIauto==False:
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
             # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
-            TFfile = (out_dir_tf / ('T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label + '_tukeyHI=%s'%tukey_alpha)).as_posix()
+            TFfile = (out_dir_tf / f'T_Nfg={N_fg}_gamma={gamma_label}_{kcuts_label}_tukeyHI={tukey_alpha}_Nmock={Nmock}').as_posix()
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -570,28 +573,29 @@ def RunPipeline(
         Pk_rec = Pk_gHI/T
 
         fig_kwargs = {'facecolor': 'w'}
+        suffix = f'{gal_cat}_{kcuts_label}_Nfg_{N_fg}_Nmock_{Nmock}.npy'
         ps_dir = out_dir_tf.parent
 
         ### TF variance:
         fig = plt.figure()
         plt.axhline(0,lw=0.8,color='black')
         plt.axhline(1,lw=0.8,color='black')
-        plt.errorbar(k,np.mean(T_wsub_i,0),np.std(T_wsub_i,0),label='with [] sub',zorder=0)
-        plt.errorbar(k+0.002,np.mean(T_nosub_i,0),np.std(T_nosub_i,0),label='no [] sub',ls='--',zorder=0)
+        plt.errorbar(k,np.mean(T_wsub_i,0),np.std(T_wsub_i,0),label='with [] sub',zorder=1)
+        plt.errorbar(k+0.002,np.mean(T_nosub_i,0),np.std(T_nosub_i,0),label='no [] sub',ls='--',zorder=1)
         for i in range(Nmock):
-            if i==0: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray',label='no [] sub realisations')
-            else: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray')
+            if i==0: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray',label='no [] sub realisations', zorder=0)
+            else: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray', zorder=0)
         plt.legend(fontsize=12)
         plt.title('MK X ' + gal_cat + r' with $N_{\rm fg}=%s$ (%s mocks)'%(N_fg,Nmock))
         plt.xlabel(r'$k$')
         plt.ylabel(r'$T(k)$')
         plt.ylim(-0.5,1.5)
-        fig.savefig(ps_dir / 'tf-variance.pdf', **fig_kwargs)
+        fig.savefig(ps_dir / f'tf_variance_{suffix}.pdf', **fig_kwargs)
 
         # Propagate error on TF into error on power:
         deltaPk_i =  Pk_rec * (deltaT_i/T) 
         Pk_rec_i = Pk_rec + deltaPk_i # corrected power uncertainty distribution
-        np.save(ps_dir / ('Pk_rec_i_%s_%s_Nfg=%s.npy'%(gal_cat,kcuts_label,N_fg)), Pk_rec_i)
+        np.save(ps_dir / f'Pk_rec_i_{suffix}.npy', Pk_rec_i)
         # Calculate 68th percentile regions for non-symmetric/non-Gaussian errors:
         ### 68.27%/2 = 34.135%. So 50-34.135 -> 50+34.135 covers 68th percentile region:
         lower_error = np.abs(np.percentile(deltaPk_i,15.865,axis=0))
@@ -620,7 +624,7 @@ def RunPipeline(
         fig.colorbar(im, cax=cax, orientation='vertical')
         ax[1].set_title(r'Normalised covariance "correlation matrix" ($N_{\rm fg}=%s$)'%N_fg,fontsize=20)
         plt.subplots_adjust(wspace=0.25)
-        fig.savefig(ps_dir / 'kbin-cov-corr-matrices.pdf', **fig_kwargs)
+        fig.savefig(ps_dir / f'kbin_cov_corr_matrices_{suffix}.pdf', **fig_kwargs)
 
         # Plot results, correcting for signal loss and with TF-based errors:
         # Chose factorisation of P(k) in plotting:
@@ -636,7 +640,7 @@ def RunPipeline(
         plt.xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
         plt.ylabel(r'$k^2\,P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-1}{\rm Mpc}]$')
         plt.ylim(-3*np.abs(np.min(k**2*Pk_rec)),3*np.max(k**2*Pk_rec))
-        fig.savefig(ps_dir / 'power-spectrum.pdf', **fig_kwargs)
+        fig.savefig(ps_dir / f'pspec_{suffix}.pdf', **fig_kwargs)
 
         ### Histogram of TF mock distributions to show error profile for each k-bin:
         nrows = int(nkbin/4)
@@ -665,7 +669,7 @@ def RunPipeline(
                 k_ind += 1
         plt.subplots_adjust(hspace=0.4)
         plt.suptitle(r'Power distribution from %s TF mocks for each $k$ ($N_{\rm fg}=%s$)'%(Nmock,N_fg))
-        fig.savefig(ps_dir / 'power-spectrum-distributions.pdf', **fig_kwargs)
+        fig.savefig(ps_dir / f'pspec_distributions_{suffix}.pdf', **fig_kwargs)
 
 
 
