@@ -555,6 +555,117 @@ def RunPipeline(
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
                                                         w_HI_rg=w_HI_rg,W_HI_rg=W_HI_rg,w_g_rg=w_g_rg,W_g_rg=W_g_rg,kcuts=kcuts,
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF,TF2D=True,kperpbins=kperpbins,kparabins=kparabins)
+    
+    if not do2DTF:
+        # Apply transfer function and save power spectrum plots
+        # Code copied from https://github.com/meerklass/meerpower/blob/main/allLband/galaxy_cross.ipynb
+        # Transfer function arrays have shape (Nmock, Nk)
+        T_wsub_i = np.array(T_wsub_i, dtype=float)
+        T_nosub_i = np.array(T_nosub_i, dtype=float)
+        k = np.array(k, dtype=float)
+        
+        T_i = np.copy(T_nosub_i)
+        T = np.mean(T_i, 0)
+        deltaT_i = T_i - T
+        Pk_rec = Pk_gHI/T
+
+        fig_kwargs = {'facecolor': 'w'}
+        ps_dir = out_dir_tf.parent
+
+        ### TF variance:
+        fig = plt.figure()
+        plt.axhline(0,lw=0.8,color='black')
+        plt.axhline(1,lw=0.8,color='black')
+        plt.errorbar(k,np.mean(T_wsub_i,0),np.std(T_wsub_i,0),label='with [] sub',zorder=0)
+        plt.errorbar(k+0.002,np.mean(T_nosub_i,0),np.std(T_nosub_i,0),label='no [] sub',ls='--',zorder=0)
+        for i in range(Nmock):
+            if i==0: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray',label='no [] sub realisations')
+            else: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray')
+        plt.legend(fontsize=12)
+        plt.title('MK X ' + gal_cat + r' with $N_{\rm fg}=%s$ (%s mocks)'%(N_fg,Nmock))
+        plt.xlabel(r'$k$')
+        plt.ylabel(r'$T(k)$')
+        plt.ylim(-0.5,1.5)
+        fig.savefig(ps_dir / 'tf-variance.pdf', **fig_kwargs)
+
+        # Propagate error on TF into error on power:
+        deltaPk_i =  Pk_rec * (deltaT_i/T) 
+        Pk_rec_i = Pk_rec + deltaPk_i # corrected power uncertainty distribution
+        np.save(ps_dir / ('Pk_rec_i_%s_%s_Nfg=%s.npy'%(gal_cat,kcuts_label,N_fg)), Pk_rec_i)
+        # Calculate 68th percentile regions for non-symmetric/non-Gaussian errors:
+        ### 68.27%/2 = 34.135%. So 50-34.135 -> 50+34.135 covers 68th percentile region:
+        lower_error = np.abs(np.percentile(deltaPk_i,15.865,axis=0))
+        upper_error = np.abs(np.percentile(deltaPk_i,84.135,axis=0))
+        asymmetric_error = np.array(list(zip(lower_error, upper_error))).T
+
+        # k-bin covariance/correlation matrices from TF:
+        fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(20,9))
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        kgrid = k * k[:,np.newaxis]
+        C = kgrid**3*np.cov(Pk_rec_i,rowvar=False)
+        im = ax[0].imshow(C,origin='lower',extent=[kbins[0],kbins[-1],kbins[0],kbins[-1]])
+        ax[0].set_xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
+        ax[0].set_ylabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
+        divider = make_axes_locatable(ax[0])
+        cax = divider.append_axes('right', size='5%', pad=0.15)
+        fig.colorbar(im, cax=cax, orientation='vertical')
+        ax[0].set_title(r'$(k_ik_j)^3\times$ Covariance ($N_{\rm fg}=%s$)'%N_fg,fontsize=20)
+        # Noramlised k-bin correlation matrix:
+        R = np.corrcoef(Pk_rec_i,rowvar=False)
+        im = ax[1].imshow(R,origin='lower',cmap='RdBu',vmin=-1,vmax=1,extent=[kbins[0],kbins[-1],kbins[0],kbins[-1]])
+        ax[1].set_xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
+        ax[1].set_ylabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
+        divider = make_axes_locatable(ax[1])
+        cax = divider.append_axes('right', size='5%', pad=0.15)
+        fig.colorbar(im, cax=cax, orientation='vertical')
+        ax[1].set_title(r'Normalised covariance "correlation matrix" ($N_{\rm fg}=%s$)'%N_fg,fontsize=20)
+        plt.subplots_adjust(wspace=0.25)
+        fig.savefig(ps_dir / 'kbin-cov-corr-matrices.pdf', **fig_kwargs)
+
+        # Plot results, correcting for signal loss and with TF-based errors:
+        # Chose factorisation of P(k) in plotting:
+        norm = np.ones(nkbin)
+        fig = plt.figure()
+        for i in range(Nmock):
+            plt.plot(k,k**2*Pk_rec_i[i],lw=0.2,color='gray',zorder=-1)
+        plt.errorbar(k,k**2*Pk_rec,k**2*asymmetric_error,ls='none',marker='o',label=r'$N_{\rm fg}=%s$ (percentile)'%N_fg,markersize=10)
+        plt.plot(k,k**2*pkmod,color='black',ls='--',label=r'Model [$\Omega_{\rm HI}b_{\rm HI} = %s \times 10^{-3}]$'%np.round(OmegaHI*b_HI*1e3,2))
+        plt.axhline(0,lw=0.8,color='black')
+        plt.legend(fontsize=12,loc='upper right',frameon=False)
+        plt.title('MeerKAT x ' + gal_cat)
+        plt.xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
+        plt.ylabel(r'$k^2\,P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-1}{\rm Mpc}]$')
+        plt.ylim(-3*np.abs(np.min(k**2*Pk_rec)),3*np.max(k**2*Pk_rec))
+        fig.savefig(ps_dir / 'power-spectrum.pdf', **fig_kwargs)
+
+        ### Histogram of TF mock distributions to show error profile for each k-bin:
+        nrows = int(nkbin/4)
+        fig, ax = plt.subplots(nrows=nrows, ncols=4, figsize=(20,12))
+        k_ind = 0
+        for row in ax:
+            for col in row:
+                if k_ind==nkbin: break
+                dum, = col.plot(0,label=r'$k=%s$'%np.round(k[k_ind],3),color='white') # dummy line to show k-value in legend
+                legend1 = col.legend([dum], [r'$k=%s$'%np.round(k[k_ind],3)], loc='upper left',fontsize=16,handlelength=0,handletextpad=0,frameon=False,borderaxespad=0.1)
+                col.add_artist(legend1)
+                #mod = col.axvline(pkmod[k_ind],color='black',ls='--',lw=2,zorder=8)
+                mod = col.axvline(0,color='black',ls='--',lw=2,zorder=8)
+                median = col.axvline(np.median(pkmod[k_ind]-Pk_rec_i[:,k_ind]),color='tab:blue',ls='-',lw=1,zorder=9)
+                span = col.axvspan(np.percentile(pkmod[k_ind]-Pk_rec_i[:,k_ind],50-34.1,axis=0), np.percentile(pkmod[k_ind]-Pk_rec_i[:,k_ind],50+34.1,axis=0), alpha=0.4, color='tab:blue',zorder=-10,label='68th percentile')
+                if k_ind==0:
+                    legend2 = col.legend([mod,median,span], ['Model','Median','68th percentile'], loc='upper right',fontsize=12,frameon=False,handlelength=1.5,handletextpad=0.4,borderaxespad=0.1)
+                    col.add_artist(legend2)
+                hist,bins = np.histogram(pkmod[k_ind]-Pk_rec_i[:,k_ind],bins=30)
+                bins = (bins[1:] + bins[:-1])/2
+                col.plot(bins,hist,ds='steps')
+                col.set_xlim(bins[0],bins[-1])
+                col.set_ylim(0)
+                col.set_yticks([])
+                if k_ind>=12: col.set_xlabel(r'$P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-1}{\rm Mpc}]$')
+                k_ind += 1
+        plt.subplots_adjust(hspace=0.4)
+        plt.suptitle(r'Power distribution from %s TF mocks for each $k$ ($N_{\rm fg}=%s$)'%(Nmock,N_fg))
+        fig.savefig(ps_dir / 'power-spectrum-distributions.pdf', **fig_kwargs)
 
 
 
