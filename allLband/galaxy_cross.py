@@ -8,6 +8,7 @@ from jsonargparse import ArgumentParser, ActionConfigFile
 from jsonargparse.typing import List
 from pathlib import Path
 from pprint import pprint
+matplotlib.rcParams['figure.figsize'] = (18, 9)
 
 parser = ArgumentParser()
 
@@ -360,6 +361,7 @@ def RunPipeline(
     if gal_cat=='wigglez': b_g = np.sqrt(0.83) # for WiggleZ at z_eff=0.41 - from https://arxiv.org/pdf/1104.2948.pdf [pg.9 rhs second quantity]
     if gal_cat=='cmass':b_g = 1.85 # Mentioned in https://arxiv.org/pdf/1607.03155.pdf
     if gal_cat=='gama': b_g = 2.35 # tuned by eye in GAMA auto-corr
+    b_g = 1.9  # Change made to match the value in the notebook ./galaxy_cross.ipynb
 
     # Gridding maps and galaxies to Cartesian field:
     import grid # use this for going from (ra,dec,freq)->(x,y,z) Cartesian-comoving grid
@@ -487,7 +489,7 @@ def RunPipeline(
     kbins = np.linspace(kmin,kmax,nkbin+1) # k-bin edges [using linear binning]
 
     import model
-    sig_v = 0
+    sig_v = 200  # Changed to match the notebook ./galaxy_cross.ipynb
     dpix = 0.3
     d_c = cosmo.d_com(HItools.Freq2Red(np.min(nu)))
     s_pix = d_c * np.radians(dpix)
@@ -573,7 +575,7 @@ def RunPipeline(
         Pk_rec = Pk_gHI/T
 
         fig_kwargs = {'facecolor': 'w'}
-        suffix = f'{gal_cat}_{kcuts_label}_Nfg_{N_fg}_Nmock_{Nmock}.npy'
+        suffix = f'{gal_cat}_{kcuts_label}_Nfg_{N_fg}_Nmock_{Nmock}_gbias_{b_g}_talpha_{tukey_alpha}'
         ps_dir = out_dir_tf.parent
 
         ### TF variance:
