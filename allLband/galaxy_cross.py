@@ -8,7 +8,6 @@ from jsonargparse import ArgumentParser, ActionConfigFile
 from jsonargparse.typing import List
 from pathlib import Path
 from pprint import pprint
-plt.rcParams['figure.figsize'] = (18, 9)
 
 parser = ArgumentParser()
 
