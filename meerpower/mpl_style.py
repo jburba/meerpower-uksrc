@@ -55,7 +55,7 @@ style1 = {
     'legend.loc': 'best',
 
     # Figure
-    'figure.figsize': [8, 6],
+    'figure.figsize': [18, 9],
     'figure.titlesize': 'large',
     ### Subplot adjust:
     'figure.subplot.left'    : 0.154, # the left side of the subplots of the figure
