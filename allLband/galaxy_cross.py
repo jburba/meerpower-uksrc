@@ -4,193 +4,36 @@ import matplotlib
 from scipy import signal
 import sys
 import os
-from jsonargparse import ArgumentParser, ActionConfigFile
-from jsonargparse.typing import List
-from pathlib import Path
-from pprint import pprint
-
-parser = ArgumentParser()
-
-parser.add_argument(
-    "--meerpower-path",
-    type=str,
-    help="Path to meerpower repository."
-)
-parser.add_argument(
-    "--survey",
-    type=str,
-    default="2021",
-    help="One of either '2019' or '2021'."
-)
-parser.add_argument(
-    "--filepath-HI",
-    type=str,
-    help="Path to an HI map file in FITS format."
-)
-parser.add_argument(
-    "--gal-cat",
-    type=str,
-    default="gama",
-    help="Galaxy catalog name.  Can be one of 'gama', 'wigglez', or 'cmass'."
-)
-parser.add_argument(
-    "--filepath-g",
-    type=str,
-    help="Path to a galaxy catalog file in txt format (wigglez) or FITS "
-         "format (gama or cmass)."
-)
-parser.add_argument(
-    "--LoadTF",
-    action="store_true",
-    help="If passed, load an existing transfer function from disk."
-)
-parser.add_argument(
-    "--do2DTF",
-    action="store_true",
-    help="Compute the two-dimensional foreground transfer function."
-)
-parser.add_argument(
-    "--doHIauto",
-    action="store_true",
-    help="Compute the autocorrlation power spectrum, i.e. HI x HI."
-)
-parser.add_argument(
-    "--doMock",
-    action="store_true",
-    help="Use mock data for consistency checks."
-)
-parser.add_argument(
-    "--mockindx",
-    type=int,
-    help="Mock file index.  If you pass '--doMock' and no value for "
-         "'--mockindx' is passed, a random index will be used."
-)
-parser.add_argument(
-    "--Nmock",
-    type=int,
-    help="Number of mock files."
-)
-parser.add_argument(
-    "--mockfilepath-HI",
-    type=str,
-    help="Path and base name for a set of numpy-readable, indexed mock HI "
-         "files.  For example, if the mock data are stored in "
-         "'/path/to/mocks_{index}.npy', you would pass "
-         "'--mockfilepath-HI /path/to/mocks' and exclude the '_{index}.npy' "
-         "suffix."
-)
-parser.add_argument(
-    "--mockfilepath-g",
-    type=str,
-    help="Path and base name for a set of numpy-readable, indexed mock galaxy "
-         "files.  For example, if the mock data are stored in "
-         "'/path/to/mocks_{index}.npy', you would pass "
-         "'--mockfilepath-gal /path/to/mocks' and exclude hte '_{index}.npy' "
-         "suffix."
-)
-parser.add_argument(
-    "--Nfg",
-    dest="N_fg",
-    type=int,
-    default=10,
-    help="Number of PCA FG modes.  Defaults to 10."
-)
-parser.add_argument(
-    "--gamma",
-    type=float,
-    default=1.4,
-    help="Resmoothing factor.  Defaults to 1.4."
-)
-parser.add_argument(
-    "--tukey-alphas",
-    type=List[float],
-    default=[0.5, 0.1, 0.2, 0.8, 1],
-    help="List of Tukey window shape parameter values.  Passed as a list of "
-         "floats with no spaces between commas.  A single value can be passed "
-         "as '--tukey-alphas [0.1]'.  Multiple values would be passed as "
-         "'--tukey-alphas [0.1,0.5,1]'.  Defaults to [0.5, 0.1, 0.2, 0.8, 1]."
-)
-parser.add_argument(
-    "--out-dir",
-    type=str,
-    help="Path to a directory for output files."
-)
-parser.add_argument(
-    "--config",
-    action=ActionConfigFile
-)
-
-args = parser.parse_args()
-print("Command Line Arguments:")
-pprint(args.__dict__)
-
-sys.path.insert(1, (Path(args.meerpower_path) / 'meerpower').as_posix())
+sys.path.insert(1, '/idia/projects/hi_im/meerpower/meerpower')
 import Init
 import plot
 
-def RunPipeline(
-    survey,
-    filepath_HI,
-    gal_cat,
-    filepath_g,
-    N_fg,
-    gamma=1.4,
-    kcuts=None,
-    LoadTF=False,
-    do2DTF=False,
-    doHIauto=False,
-    doMock=False,
-    mockindx=None,
-    Nmock=500,
-    mockfilepath_HI=None,
-    mockfilepath_g=None,
-    out_dir="./",
-    tukey_alpha=0.1
-):
+def RunPipeline(survey,gal_cat,N_fg,gamma=1.4,kcuts=None,do2DTF=False,doHIauto=False,tukey_alpha=0.1):
     '''
     Use for looping over full pipeline with different choices of inputs for purposes
     of transfer function building. Input choices from below:
     # survey = '2019' or '2021'
-    # map_file = Path to a HI map file in FITS format
     # gal_cat = 'wigglez', 'cmass', or 'gama'
-    # filepath_g = Path to a galaxy catalog file in txt format (wigglez) or FITS format (gama or cmass).
     # N_fg = int (the number of PCA components to remove)
     # gamma = float or None (resmoothing parameter)
     # kcuts = [kperpmin,kparamin,kperpmax,kparamax] or None (exclude areas of k-space from spherical average)]
-    # do2DTF = Compute the two-dimensional foreground transfer function
-    # doHIauto = Compute the autocorrlation power spectrum, i.e. HI x HI
-    # doMock = Use mock data for consistency checks
-    # mockindx = Mock file index.  If None (default), choose a random index
-    # mockfilepath_HI = Path and base name for a set of numpy-readable, indexed files containing mock HI data.
-    #                   For example, if the mock data are stored in '/path/to/mocks_{index}.npy', you would pass
-    #                   'mockfilepath_HI=/path/to/mocks' and exclude the '_{index}.npy' suffix.
-    # mockfilepath_g = Path and base name for a set of numpy-readable, indexed files containing mock galaxy data.
-    #                  For example, if the mock data are stored in '/path/to/mocks_{index}.npy', you would pass
-    #                  'mockfilepath_g=/path/to/mocks' and exclude the '_{index}.npy' suffix.
-    # out_dir = Path to the meerpower
-    # tukey_alpha = Tukey window shape parameter
-    # mp_path = Path to meerpower repository
     '''
-    if not isinstance(out_dir, Path):
-        out_dir = Path(out_dir)
-
     # Load data and run some pre-processing steps:
     doMock = False # Set True to load mock data for consistency checks
 
     if survey=='2019':
-        # filestem = '/idia/projects/hi_im/raw_vis/katcali_output/level6_output/p0.3d/p0.3d_sigma2.5_iter2/'
-        # map_file = filestem + 'Nscan366_Tsky_cube_p0.3d_sigma2.5_iter2.fits'
+        filestem = '/idia/projects/hi_im/raw_vis/katcali_output/level6_output/p0.3d/p0.3d_sigma2.5_iter2/'
+        map_file = filestem + 'Nscan366_Tsky_cube_p0.3d_sigma2.5_iter2.fits'
         numin,numax = 971,1023.2
     if survey=='2021':
-        # filestem = '/idia/users/jywang/MeerKLASS/calibration2021/level6/0.3/sigma4_count40/re_cali1_round5/'
-        # map_file = filestem + 'Nscan961_Tsky_cube_p0.3d_sigma4.0_iter2.fits'
+        filestem = '/idia/users/jywang/MeerKLASS/calibration2021/level6/0.3/sigma4_count40/re_cali1_round5/'
+        map_file = filestem + 'Nscan961_Tsky_cube_p0.3d_sigma4.0_iter2.fits'
         numin,numax = 971,1023.8 # default setting in Init.ReadIn()
-    MKmap,w_HI,W_HI,counts_HI,dims,ra,dec,nu,wproj = Init.ReadIn(filepath_HI,numin=numin,numax=numax)
+    MKmap,w_HI,W_HI,counts_HI,dims,ra,dec,nu,wproj = Init.ReadIn(map_file,numin=numin,numax=numax)
     if doMock==True:
-        if mockindx is None:
-            mockindx = np.random.randint(100)
-        # MKmap_mock = np.load('/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam_%s.npy'%mockindx)
-        MKmap_mock = np.load(mockfilepath_HI + '_%s.npy'%mockindx)
+        mockindx = np.random.randint(100)
+        mockindx = 1
+        MKmap_mock = np.load('/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam_%s.npy'%mockindx)
     nx,ny,nz = np.shape(MKmap)
 
     ### Remove incomplete LoS pixels from maps:
@@ -219,7 +62,7 @@ def RunPipeline(
     r = 0.9 # cross-correlation coefficient
     D_dish = 13.5 # Dish-diameter [metres]
     theta_FWHM,R_beam = telescope.getbeampars(D_dish,np.median(nu))
-    # gamma = 1.4 # resmoothing factor - set = None to have no resmoothing
+    gamma = 1.4 # resmoothing factor - set = None to have no resmoothing
     #gamma = None
 
     ### Map resmoothing:
@@ -325,31 +168,25 @@ def RunPipeline(
     if survey=='2019':
         if gal_cat=='wigglez':
             if doMock==False: # Read-in WiggleZ galaxies (provided by Laura):
-                # galcat = np.genfromtxt('/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11data.dat', skip_header=1)
-                galcat = np.genfromtxt(filepath_g, skip_header=1)
+                galcat = np.genfromtxt('/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11data.dat', skip_header=1)
                 ra_g,dec_g,z_g = galcat[:,0],galcat[:,1],galcat[:,2]
-            # if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat_%s.npy'%mockindx)
-            if doMock==True: ra_g,dec_g,z_g = np.load(mockfilepath_g + '_%s.npy'%mockindx)
+            if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat_%s.npy'%mockindx)
             z_Lband = (z_g>zmin) & (z_g<zmax) # Cut redshift to MeerKAT IM range:
             ra_g,dec_g,z_g = ra_g[z_Lband],dec_g[z_Lband],z_g[z_Lband]
         if gal_cat=='cmass':
             if doMock==False: # Read-in BOSS-CMASS galaxies (in Yi-Chao's ilifu folder - also publically available from: https://data.sdss.org/sas/dr12/boss/lss):
-                # filename = '/idia/users/ycli/SDSS/dr12/galaxy_DR12v5_CMASSLOWZTOT_North.fits.gz'
-                # hdu = fits.open(filename)
-                hdu = fits.open(filepath_g)
+                filename = '/idia/users/ycli/SDSS/dr12/galaxy_DR12v5_CMASSLOWZTOT_North.fits.gz'
+                hdu = fits.open(filename)
                 ra_g,dec_g,z_g = hdu[1].data['RA'],hdu[1].data['DEC'],hdu[1].data['Z']
-            # if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat_%s.npy'%mockindx)
-            if doMock==True: ra_g,dec_g,z_g = np.load(mockfilepath_g + '_%s.npy'%mockindx)
+            if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat_%s.npy'%mockindx)
             ra_g,dec_g,z_g = Init.pre_process_2019Lband_CMASS_galaxies(ra_g,dec_g,z_g,ra,dec,zmin,zmax,W_HI)
 
     if survey=='2021':
         if doMock==False: # Read-in GAMA galaxies:
-            # Fits = '/idia/projects/hi_im/GAMA_DR4/G23TilingCatv11.fits'
-            # hdu = fits.open(Fits)
-            hdu = fits.open(filepath_g)
+            Fits = '/idia/projects/hi_im/GAMA_DR4/G23TilingCatv11.fits'
+            hdu = fits.open(Fits)
             ra_g,dec_g,z_g = hdu[1].data['RA'],hdu[1].data['DEC'],hdu[1].data['Z']
-        # if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat_%s.npy'%mockindx)
-        if doMock==True: ra_g,dec_g,z_g = np.load(mockfilepath_g + '_%s.npy'%mockindx)
+        if doMock==True: ra_g,dec_g,z_g = np.load('/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat_%s.npy'%mockindx)
         # Remove galaxies outside bulk GAMA footprint so they don't bias the simple binary selection function
         GAMAcutmask = (ra_g>ramin_gal) & (ra_g<ramax_gal) & (dec_g>decmin_gal) & (dec_g<decmax_gal) & (z_g>zmin) & (z_g<zmax)
         ra_g,dec_g,z_g = ra_g[GAMAcutmask],dec_g[GAMAcutmask],z_g[GAMAcutmask]
@@ -360,7 +197,6 @@ def RunPipeline(
     if gal_cat=='wigglez': b_g = np.sqrt(0.83) # for WiggleZ at z_eff=0.41 - from https://arxiv.org/pdf/1104.2948.pdf [pg.9 rhs second quantity]
     if gal_cat=='cmass':b_g = 1.85 # Mentioned in https://arxiv.org/pdf/1607.03155.pdf
     if gal_cat=='gama': b_g = 2.35 # tuned by eye in GAMA auto-corr
-    b_g = 1.9  # Change made to match the value in the notebook ./galaxy_cross.ipynb
 
     # Gridding maps and galaxies to Cartesian field:
     import grid # use this for going from (ra,dec,freq)->(x,y,z) Cartesian-comoving grid
@@ -401,8 +237,7 @@ def RunPipeline(
                 W_g_rg = np.zeros(np.shape(n_g_rg))
                 for i in range(1,nrand):
                     plot.ProgressBar(i,nrand)
-                    # galcat = np.genfromtxt( '/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11rand%s.dat' %'{:04d}'.format(i), skip_header=1)
-                    galcat = np.genfromtxt(filepath_g.replace('data.dat', 'rand%s.dat' %'{:04d}'.format(i)), skip_header=1)
+                    galcat = np.genfromtxt( '/users/scunnington/MeerKAT/LauraShare/wigglez_reg11hrS_z0pt30_0pt50/reg11rand%s.dat' %'{:04d}'.format(i), skip_header=1)
                     ra_g_rand,dec_g_rand,z_g_rand = galcat[:,0],galcat[:,1],galcat[:,2]
                     z_Lband = (z_g_rand>zmin) & (z_g_rand<zmax) # Cut redshift to MeerKAT IM range:
                     ra_g_rand,dec_g_rand,z_g_rand = ra_g_rand[z_Lband],dec_g_rand[z_Lband],z_g_rand[z_Lband]
@@ -488,7 +323,7 @@ def RunPipeline(
     kbins = np.linspace(kmin,kmax,nkbin+1) # k-bin edges [using linear binning]
 
     import model
-    sig_v = 200  # Changed to match the notebook ./galaxy_cross.ipynb
+    sig_v = 0
     dpix = 0.3
     d_c = cosmo.d_com(HItools.Freq2Red(np.min(nu)))
     s_pix = d_c * np.radians(dpix)
@@ -499,42 +334,31 @@ def RunPipeline(
 
 
     # Calculate power specs (to get k's for TF):
-    if doHIauto==False:
-        Pk_gHI,k,nmodes = power.Pk(MKmap_clean_rg,n_g_rg,dims_rg,kbins,corrtype='Cross',w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts)
-        if gamma is not None: 
-            theta_FWHM_max,R_beam_max = telescope.getbeampars(D_dish,np.min(nu))
-            R_beam_gam = R_beam_max * np.sqrt(gamma)
-        else: R_beam_gam = np.copy(R_beam)
-        pkmod,k = model.PkMod(Pmod,dims_rg,kbins,b_HI,b_g,f,sig_v,Tbar1=Tbar,Tbar2=1,r=r,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix1=s_pix,s_para1=s_para,interpkbins=True,MatterRSDs=True,gridinterp=True)[0:2]
-    if doHIauto==True:
-        Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
+    if doHIauto==False: Pk_gHI,k,nmodes = power.Pk(MKmap_clean_rg,n_g_rg,dims_rg,kbins,corrtype='Cross',w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts)
+    if doHIauto==True: Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
 
-    # LoadTF = False
-    # Nmock = 500
+    LoadTF = False
+    Nmock = 500
     if gamma is None: gamma_label = 'None'
     else: gamma_label = str(gamma)
     if kcuts is None: kcuts_label = 'nokcuts'
     else: kcuts_label = 'withkcuts'
-    # mockfilepath_HI = '/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam'
-    # if gal_cat=='wigglez': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat'
-    # if gal_cat=='cmass': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat'
-    # if gal_cat=='gama': mockfilepath_g = '/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat'
+    mockfilepath_HI = '/idia/projects/hi_im/meerpower/'+survey+'Lband/mocks/dT_HI_p0.3d_wBeam'
+    if gal_cat=='wigglez': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockWiggleZcat'
+    if gal_cat=='cmass': mockfilepath_g = '/idia/projects/hi_im/meerpower/2019Lband/mocks/mockCMASScat'
+    if gal_cat=='gama': mockfilepath_g = '/idia/projects/hi_im/meerpower/2021Lband/mocks/mockGAMAcat'
 
-    out_dir_tf = out_dir / f'{survey}Lband' / gal_cat / 'TFdata'
-    out_dir_tf.mkdir(exist_ok=True, parents=True)
     if do2DTF==False:
         if doHIauto==False:
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
-            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
-            TFfile = (out_dir_tf / f'T_Nfg={N_fg}_gamma={gamma_label}_{kcuts_label}_tukeyHI={tukey_alpha}_Nmock={Nmock}').as_posix()
+            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
                                                         w_HI_rg=w_HI_rg,W_HI_rg=W_HI_rg,w_g_rg=w_g_rg,W_g_rg=W_g_rg,kcuts=kcuts,
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF)
         if doHIauto==True:
-            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
-            TFfile = (out_dir_tf / ('T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label) + kcuts_label)).as_posix()
+            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'HIauto',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -544,148 +368,36 @@ def RunPipeline(
         kperpbins = np.linspace(0.008,0.3,34)
         kparabins = np.linspace(0.003,0.6,22)
         if doHIauto==False:
-            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
-            TFfile = (out_dir_tf / ('T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label))).as_posix()
+            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
             T2d_wsub_i, T2d_nosub_i,k2d  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
                                                         w_HI_rg=w_HI_rg,W_HI_rg=W_HI_rg,w_g_rg=w_g_rg,W_g_rg=W_g_rg,kcuts=kcuts,
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF,TF2D=True,kperpbins=kperpbins,kparabins=kparabins)
         if doHIauto==True:
-            # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
-            TFfile = (out_dir_tf / ('T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label))).as_posix()
+            TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T2D_HIauto_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)
             T2d_wsub_i, T2d_nosub_i,k2d  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'HIauto',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
                                                         w_HI_rg=w_HI_rg,W_HI_rg=W_HI_rg,w_g_rg=w_g_rg,W_g_rg=W_g_rg,kcuts=kcuts,
                                                         taper_HI=taper_HI,taper_g=taper_g,LoadTF=LoadTF,TF2D=True,kperpbins=kperpbins,kparabins=kparabins)
-    
-    if not do2DTF:
-        # Apply transfer function and save power spectrum plots
-        # Code copied from https://github.com/meerklass/meerpower/blob/main/allLband/galaxy_cross.ipynb
-        # Transfer function arrays have shape (Nmock, Nk)
-        T_wsub_i = np.array(T_wsub_i, dtype=float)
-        T_nosub_i = np.array(T_nosub_i, dtype=float)
-        k = np.array(k, dtype=float)
-        
-        T_i = np.copy(T_nosub_i)
-        T = np.mean(T_i, 0)
-        deltaT_i = T_i - T
-        Pk_rec = Pk_gHI/T
-
-        fig_kwargs = {'facecolor': 'w'}
-        suffix = f'{gal_cat}_{kcuts_label}_Nfg_{N_fg}_Nmock_{Nmock}_gbias_{b_g}_talpha_{tukey_alpha}'
-        ps_dir = out_dir_tf.parent
-
-        ### TF variance:
-        fig = plt.figure()
-        plt.axhline(0,lw=0.8,color='black')
-        plt.axhline(1,lw=0.8,color='black')
-        plt.errorbar(k,np.mean(T_wsub_i,0),np.std(T_wsub_i,0),label='with [] sub',zorder=1)
-        plt.errorbar(k+0.002,np.mean(T_nosub_i,0),np.std(T_nosub_i,0),label='no [] sub',ls='--',zorder=1)
-        for i in range(Nmock):
-            if i==0: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray',label='no [] sub realisations', zorder=0)
-            else: plt.plot(k,T_nosub_i[i],lw=0.2,color='gray', zorder=0)
-        plt.legend(fontsize=12)
-        plt.title('MK X ' + gal_cat + r' with $N_{\rm fg}=%s$ (%s mocks)'%(N_fg,Nmock))
-        plt.xlabel(r'$k$')
-        plt.ylabel(r'$T(k)$')
-        plt.ylim(-0.5,1.5)
-        fig.savefig(ps_dir / f'tf_variance_{suffix}.pdf', **fig_kwargs)
-
-        # Propagate error on TF into error on power:
-        deltaPk_i =  Pk_rec * (deltaT_i/T) 
-        Pk_rec_i = Pk_rec + deltaPk_i # corrected power uncertainty distribution
-        np.save(ps_dir / f'Pk_rec_i_{suffix}.npy', Pk_rec_i)
-        # Calculate 68th percentile regions for non-symmetric/non-Gaussian errors:
-        ### 68.27%/2 = 34.135%. So 50-34.135 -> 50+34.135 covers 68th percentile region:
-        lower_error = np.abs(np.percentile(deltaPk_i,15.865,axis=0))
-        upper_error = np.abs(np.percentile(deltaPk_i,84.135,axis=0))
-        asymmetric_error = np.array(list(zip(lower_error, upper_error))).T
-
-        # k-bin covariance/correlation matrices from TF:
-        fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(20,9))
-        from mpl_toolkits.axes_grid1 import make_axes_locatable
-        kgrid = k * k[:,np.newaxis]
-        C = kgrid**3*np.cov(Pk_rec_i,rowvar=False)
-        im = ax[0].imshow(C,origin='lower',extent=[kbins[0],kbins[-1],kbins[0],kbins[-1]])
-        ax[0].set_xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
-        ax[0].set_ylabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
-        divider = make_axes_locatable(ax[0])
-        cax = divider.append_axes('right', size='5%', pad=0.15)
-        fig.colorbar(im, cax=cax, orientation='vertical')
-        ax[0].set_title(r'$(k_ik_j)^3\times$ Covariance ($N_{\rm fg}=%s$)'%N_fg,fontsize=20)
-        # Noramlised k-bin correlation matrix:
-        R = np.corrcoef(Pk_rec_i,rowvar=False)
-        im = ax[1].imshow(R,origin='lower',cmap='RdBu',vmin=-1,vmax=1,extent=[kbins[0],kbins[-1],kbins[0],kbins[-1]])
-        ax[1].set_xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
-        ax[1].set_ylabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
-        divider = make_axes_locatable(ax[1])
-        cax = divider.append_axes('right', size='5%', pad=0.15)
-        fig.colorbar(im, cax=cax, orientation='vertical')
-        ax[1].set_title(r'Normalised covariance "correlation matrix" ($N_{\rm fg}=%s$)'%N_fg,fontsize=20)
-        plt.subplots_adjust(wspace=0.25)
-        fig.savefig(ps_dir / f'kbin_cov_corr_matrices_{suffix}.pdf', **fig_kwargs)
-
-        # Plot results, correcting for signal loss and with TF-based errors:
-        # Chose factorisation of P(k) in plotting:
-        norm = np.ones(nkbin)
-        fig = plt.figure()
-        for i in range(Nmock):
-            plt.plot(k,k**2*Pk_rec_i[i],lw=0.2,color='gray',zorder=-1)
-        plt.errorbar(k,k**2*Pk_rec,k**2*asymmetric_error,ls='none',marker='o',label=r'$N_{\rm fg}=%s$ (percentile)'%N_fg,markersize=10)
-        plt.plot(k,k**2*pkmod,color='black',ls='--',label=r'Model [$\Omega_{\rm HI}b_{\rm HI} = %s \times 10^{-3}]$'%np.round(OmegaHI*b_HI*1e3,2))
-        plt.axhline(0,lw=0.8,color='black')
-        plt.legend(fontsize=12,loc='upper right',frameon=False)
-        plt.title('MeerKAT x ' + gal_cat)
-        plt.xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
-        plt.ylabel(r'$k^2\,P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-1}{\rm Mpc}]$')
-        plt.ylim(-3*np.abs(np.min(k**2*Pk_rec)),3*np.max(k**2*Pk_rec))
-        fig.savefig(ps_dir / f'pspec_{suffix}.pdf', **fig_kwargs)
-
-        ### Histogram of TF mock distributions to show error profile for each k-bin:
-        nrows = int(nkbin/4)
-        fig, ax = plt.subplots(nrows=nrows, ncols=4, figsize=(20,12))
-        k_ind = 0
-        for row in ax:
-            for col in row:
-                if k_ind==nkbin: break
-                dum, = col.plot(0,label=r'$k=%s$'%np.round(k[k_ind],3),color='white') # dummy line to show k-value in legend
-                legend1 = col.legend([dum], [r'$k=%s$'%np.round(k[k_ind],3)], loc='upper left',fontsize=16,handlelength=0,handletextpad=0,frameon=False,borderaxespad=0.1)
-                col.add_artist(legend1)
-                #mod = col.axvline(pkmod[k_ind],color='black',ls='--',lw=2,zorder=8)
-                mod = col.axvline(0,color='black',ls='--',lw=2,zorder=8)
-                median = col.axvline(np.median(pkmod[k_ind]-Pk_rec_i[:,k_ind]),color='tab:blue',ls='-',lw=1,zorder=9)
-                span = col.axvspan(np.percentile(pkmod[k_ind]-Pk_rec_i[:,k_ind],50-34.1,axis=0), np.percentile(pkmod[k_ind]-Pk_rec_i[:,k_ind],50+34.1,axis=0), alpha=0.4, color='tab:blue',zorder=-10,label='68th percentile')
-                if k_ind==0:
-                    legend2 = col.legend([mod,median,span], ['Model','Median','68th percentile'], loc='upper right',fontsize=12,frameon=False,handlelength=1.5,handletextpad=0.4,borderaxespad=0.1)
-                    col.add_artist(legend2)
-                hist,bins = np.histogram(pkmod[k_ind]-Pk_rec_i[:,k_ind],bins=30)
-                bins = (bins[1:] + bins[:-1])/2
-                col.plot(bins,hist,ds='steps')
-                col.set_xlim(bins[0],bins[-1])
-                col.set_ylim(0)
-                col.set_yticks([])
-                if k_ind>=12: col.set_xlabel(r'$P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-1}{\rm Mpc}]$')
-                k_ind += 1
-        plt.subplots_adjust(hspace=0.4)
-        plt.suptitle(r'Power distribution from %s TF mocks for each $k$ ($N_{\rm fg}=%s$)'%(Nmock,N_fg))
-        fig.savefig(ps_dir / f'pspec_distributions_{suffix}.pdf', **fig_kwargs)
 
 
 
+do2DTF = False
+doHIauto = False
 
 #survey = '2019'
 #gal_cat = 'wigglez'
 #gal_cat = 'cmass'
 
-# survey = '2021'
-# gal_cat = 'gama'
+survey = '2021'
+gal_cat = 'gama'
 
-# if gal_cat=='cmass' or gal_cat=='wigglez': N_fgs = [12,10,8,15,6]
-# if gal_cat=='gama': N_fgs = [8,12,6,10,15]
+if gal_cat=='cmass' or gal_cat=='wigglez': N_fgs = [12,10,8,15,6]
+if gal_cat=='gama': N_fgs = [8,12,6,10,15]
 
-# N_fgs = [10,8,12,6,5,7,9,11,13,14,15,16,17,18,19,20]
+N_fgs = [10,8,12,6,5,7,9,11,13,14,15,16,17,18,19,20]
 
 #if gal_cat=='cmass': kcuts = [0.052,0.031,0.15,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
 #if gal_cat=='gama': kcuts = [0.052,0.031,0.175,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
@@ -699,28 +411,7 @@ for i in range(len(N_fgs)):
     RunPipeline(survey,gal_cat,N_fgs[i],kcuts=kcuts,do2DTF=do2DTF,doHIauto=doHIauto)
 '''
 
-for i in range(len(args.tukey_alphas)):
-    RunPipeline(
-        args.survey,
-        args.filepath_HI,
-        args.gal_cat,
-        args.filepath_g,
-        args.N_fg,
-        gamma=args.gamma,
-        kcuts=kcuts,
-        LoadTF=args.LoadTF,
-        do2DTF=args.do2DTF,
-        doHIauto=args.doHIauto,
-        doMock=args.doMock,
-        mockindx=args.mockindx,
-        Nmock=args.Nmock,
-        mockfilepath_HI=args.mockfilepath_HI,
-        mockfilepath_g=args.mockfilepath_g,
-        out_dir=args.out_dir,
-        tukey_alpha=args.tukey_alphas[i]
-    )
-
-# FIXME: I need to add some code ported from the notebook to compute the final
-#        power spectra with the transfer function corrections applied.
-#        I also need to add some code to save plots so we know what the outputs
-#        look like.
+N_fg = 10
+tukey_alphas = [0.5,0.1,0.2,0.8,1]
+for i in range(len(tukey_alphas)):
+    RunPipeline(survey,gal_cat,N_fg,kcuts=kcuts,do2DTF=do2DTF,doHIauto=doHIauto,tukey_alpha=tukey_alphas[i])
