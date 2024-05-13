@@ -602,6 +602,7 @@ def RunPipeline(
         lower_error = np.abs(np.percentile(deltaPk_i,15.865,axis=0))
         upper_error = np.abs(np.percentile(deltaPk_i,84.135,axis=0))
         asymmetric_error = np.array(list(zip(lower_error, upper_error))).T
+        np.save(ps_dir / f'Pk_rec_i_errorbars_{suffix}.npy', asymmetric_error)
 
         # k-bin covariance/correlation matrices from TF:
         fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(20,9))
