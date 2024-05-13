@@ -596,6 +596,7 @@ def RunPipeline(
         # Propagate error on TF into error on power:
         deltaPk_i =  Pk_rec * (deltaT_i/T) 
         Pk_rec_i = Pk_rec + deltaPk_i # corrected power uncertainty distribution
+        np.save(ps_dir / f'k_{suffix}.npy', k)
         np.save(ps_dir / f'Pk_rec_i_{suffix}.npy', Pk_rec_i)
         # Calculate 68th percentile regions for non-symmetric/non-Gaussian errors:
         ### 68.27%/2 = 34.135%. So 50-34.135 -> 50+34.135 covers 68th percentile region:
