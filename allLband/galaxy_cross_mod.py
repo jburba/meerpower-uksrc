@@ -534,6 +534,8 @@ def RunPipeline(
             #TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label
             # TFfile = '/idia/projects/hi_im/meerpower/'+survey+'Lband/'+gal_cat+'/TFdata/T_Nfg=%s_gamma=%s_'%(N_fg,gamma_label)+kcuts_label+'_tukeyHI=%s'%tukey_alpha
             TFfile = (out_dir_tf / f'T_Nfg={N_fg}_gamma={gamma_label}_{kcuts_label}_tukeyHI={tukey_alpha}_Nmock={Nmock}').as_posix()
+            if args.grid_seed is not None:
+                TFfile += f'_seed_{args.grid_seed}'
             T_wsub_i, T_nosub_i,k  = foreground.TransferFunction(MKmap_unsmoothed,Nmock,N_fg,'Cross',kbins,k,TFfile,ra,dec,nu,wproj,dims0_rg,
                                                         Np,window,compensate,interlace,mockfilepath_HI,mockfilepath_g,gal_cat=gal_cat,
                                                         gamma=gamma,D_dish=D_dish,w_HI=w_HI,W_HI=W_HI,doWeightFGclean=True,PCAMeanCentre=True,
@@ -581,7 +583,9 @@ def RunPipeline(
         Pk_rec = Pk_gHI/T
 
         fig_kwargs = {'facecolor': 'w'}
-        suffix = f'{gal_cat}_{kcuts_label}_Nfg_{N_fg}_Nmock_{Nmock}_gbias_{b_g}_talpha_{tukey_alpha}'
+        suffix = f'Nfg_{N_fg}_gamma_{gamma}_{kcuts_label}_talpha_{tukey_alpha}_Nmock_{Nmock}'
+        if args.grid_seed is not None:
+            suffix += f'_seed_{args.grid_seed}'
         ps_dir = out_dir_tf.parent
 
         ### TF variance:
