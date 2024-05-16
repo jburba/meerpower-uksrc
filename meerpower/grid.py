@@ -264,9 +264,13 @@ def ParticleSampling(delta,dims_0,dims_1,Np=1,sample_ingrid=True):
     cellvals = cellvals[cellvals!=0]
     return xp,yp,zp,cellvals
 
-def SkyPixelParticles(ra,dec,nu,wproj,map=None,W=None,Np=1):
+def SkyPixelParticles(ra,dec,nu,wproj,map=None,W=None,Np=1,seed=None):
     '''Create particles that lie in centre of ra,dec,nu cells, then randomly generate
-    additional particles kicked by random half-pixel distances away from pixel centre'''
+    additional particles kicked by random half-pixel distances away from pixel centre
+    
+    The randomly generated additional particle positions can be seeded using `seed`.'''
+    if seed is not None:
+        np.random.seed(seed)
     # Np = number of particles generated in each cell (default 1 only assigns particles at cell centre)
     nra,ndec = np.shape(ra)
     nz = len(nu)

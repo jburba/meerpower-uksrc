@@ -111,6 +111,13 @@ parser.add_argument(
          "'--tukey-alphas [0.1,0.5,1]'.  Defaults to [0.5, 0.1, 0.2, 0.8, 1]."
 )
 parser.add_argument(
+    "--grid-seed",
+    type=int,
+    default=834515,
+    help="Random seed for the regridding step.  Fixes the random locations "
+         "of the sampling particles within pixels."
+)
+parser.add_argument(
     "--out-dir",
     type=str,
     help="Path to a directory for output files."
