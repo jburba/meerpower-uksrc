@@ -502,8 +502,11 @@ def RunPipeline(
     s_para = np.mean( cosmo.d_com(HItools.Freq2Red(nu[:-1])) - cosmo.d_com(HItools.Freq2Red(nu[1:])) )
 
     ### Galaxy Auto-power (can use to constrain bias and use for analytical errors):
+    Pk_g,k,nmodes = power.Pk(n_g_rg,n_g_rg,dims_rg,kbins,corrtype='Galauto',w1=w_g_rg,w2=w_g_rg,W1=W_g_rg,W2=W_g_rg)
     W_g_rg /= np.max(W_g_rg)
-
+    Vfrac = np.sum(W_g_rg)/(nx_rg*ny_rg*nz_rg)
+    nbar = np.sum(n_g_rg)/(lx*ly*lz*Vfrac) # Calculate number density inside survey footprint
+    P_SN = np.ones(len(k))*1/nbar # approximate shot-noise for errors (already subtracted in Pk estimator)
 
     # Calculate power specs (to get k's for TF):
     if doHIauto==False:
@@ -515,6 +518,8 @@ def RunPipeline(
         pkmod,k = model.PkMod(Pmod,dims_rg,kbins,b_HI,b_g,f,sig_v,Tbar1=Tbar,Tbar2=1,r=r,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix1=s_pix,s_para1=s_para,interpkbins=True,MatterRSDs=True,gridinterp=True)[0:2]
     if doHIauto==True:
         Pk_HI,k,nmodes = power.Pk(MKmap_clean_rg,MKmap_clean_rg,dims_rg,kbins,corrtype='HIauto',w1=w_HI_rg,w2=w_HI_rg,W1=W_HI_rg,W2=W_HI_rg)
+    # Calculate P_SN and sig_err()
+    sig_err = 1/np.sqrt(2*nmodes) * np.sqrt( Pk_gHI**2 + Pk_HI*( Pk_g + P_SN ) ) # Error estimate
 
     # LoadTF = False
     # Nmock = 500
@@ -685,32 +690,78 @@ def RunPipeline(
         plt.suptitle(r'Power distribution from %s TF mocks for each $k$ ($N_{\rm fg}=%s$)'%(Nmock,N_fg))
         fig.savefig(ps_dir / f'pspec_distributions_{suffix}.pdf', **fig_kwargs)
 
+        if gal_cat=='cmass': kbin_cut = (k>0.09) & (k<0.25)
+        if gal_cat=='gama':
+            # Remove the two lowest k bins which are consistent with zero
+            # Remove the highest k bin which is negative
+            kmincut,kmaxcut = 0.1,0.285
+
+        kbin_cut = (k>kmincut) & (k<kmaxcut) # untrusted k-bins to cut
+
+        sig_v = 400  # sig_v updated here for consistency with the model fitting in the notebook ./galaxy_cross.ipynb
+
+        ### Chi-squared and detection significance for fiducial OmegaHI and diagonal covariance:
+        print('\n----------------------------------------------\n---- (fiducial OmegaHI & diagonal covariance):')
+        print('\nFiducial OmegaHIbHIr x 10^3 = ',str(np.round(1e3*OmegaHIbHI,3)))
+        print('\nReduced Chi^2: ' + str(model.ChiSquare(Pk_rec[kbin_cut],pkmod[kbin_cut],np.std(Pk_rec_i,0)[kbin_cut],dof=len(k[kbin_cut]))))
+        det_sig = model.DetectionSigma(Pk_rec[kbin_cut],pkmod[kbin_cut],np.std(Pk_rec_i,0)[kbin_cut])
+        OmegaHI = OmegaHIbHI/b_HI
+        Tbar = HItools.Tbar(zeff,OmegaHI)
+        pkmod,k = model.PkMod(Pmod,dims_rg,kbins,b_HI,b_g,f,sig_v,Tbar1=Tbar,Tbar2=1,r=1,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix1=s_pix,s_pix2=0,s_para1=s_para,s_para2=0,interpkbins=True,MatterRSDs=True,gridinterp=True)[0:2]
+
+        ### Now get best-fit OmegaHI:
+        # Diagonal covariance:
+        OmHIbHIr_fit, sigma_OmHIbHIr = model.LSqFitPkAmplitude(Pk_rec,np.std(Pk_rec_i,0),Pmod,zeff,dims_rg,kbins,corrtype='Cross',P_N_=0,kmin=kmincut,kmax=kmaxcut,b2=b_g,f=f,sig_v=sig_v,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix=s_pix,s_para=s_para)
+        OmegaHI_fit = OmHIbHIr_fit/b_HI
+        Tbar_fit = HItools.Tbar(zeff,OmegaHI_fit)
+        pkmod_fit,k = model.PkMod(Pmod,dims_rg,kbins,b_HI,b_g,f,sig_v,Tbar1=Tbar_fit,Tbar2=1,r=1,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix1=s_pix,s_pix2=0,s_para1=s_para,s_para2=0,interpkbins=True,MatterRSDs=True,gridinterp=True)[0:2]
+        print('\n----------------------------------------------\n---- (fitted OmegaHI & diagonal covariance):')
+        print('\nOmegaHIbHIr x 10^3 = ',str(np.round(1e3*OmHIbHIr_fit,3)), '+/-', str(np.round(1e3*sigma_OmHIbHIr,3)))
+        print('\nReduced Chi^2 :' + str(model.ChiSquare(Pk_rec[kbin_cut],pkmod_fit[kbin_cut],np.std(Pk_rec_i,0)[kbin_cut],dof=len(k[kbin_cut]))))
+        det_sig = model.DetectionSigma(Pk_rec[kbin_cut],pkmod_fit[kbin_cut],np.std(Pk_rec_i,0)[kbin_cut])
+
+        # Full covariance (fiducial OmegaHI):
+        print('\n----------------------------------------------\n---- (fiducial OmegaHI & full covariance):')
+        print('\nFiducial OmegaHIbHIr x 10^3 = ',str(np.round(1e3*OmegaHIbHI,3)))
+        C = np.cov(Pk_rec_i,rowvar=False)
+        C = C[kbin_cut]
+        C = C[:,kbin_cut]
+        print('\nReduced Chi^2 :' + str(model.ChiSquare(Pk_rec[kbin_cut],pkmod[kbin_cut],C,dof=len(k[kbin_cut]))))
+        det_sig = model.DetectionSigma(Pk_rec[kbin_cut],pkmod[kbin_cut],C)
+
+        # Full covariance (fitted OmegaHI):
+        OmHIbHIr_fit, sigma_OmHIbHIr = model.LSqFitPkAmplitude(Pk_rec,np.cov(Pk_rec_i,rowvar=False),Pmod,zeff,dims_rg,kbins,corrtype='Cross',P_N_=0,kmin=kmincut,kmax=kmaxcut,b2=b_g,f=f,sig_v=sig_v,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix=s_pix,s_para=s_para)
+        OmegaHI_fit = OmHIbHIr_fit/b_HI
+        Tbar_fit = HItools.Tbar(zeff,OmegaHI_fit)
+        pkmod_fit,k = model.PkMod(Pmod,dims_rg,kbins,b_HI,b_g,f,sig_v,Tbar1=Tbar_fit,Tbar2=1,r=1,R_beam1=R_beam_gam,R_beam2=0,w1=w_HI_rg,w2=w_g_rg,W1=W_HI_rg,W2=W_g_rg,kcuts=kcuts,s_pix1=s_pix,s_pix2=0,s_para1=s_para,s_para2=0,interpkbins=True,MatterRSDs=True,gridinterp=True)[0:2]
+        print('\n----------------------------------------------\n---- (fitted OmegaHI & full covariance):')
+        print('\nOmegaHIbHIr x 10^3 = ',str(np.round(1e3*OmHIbHIr_fit,3)), '+/-', str(np.round(1e3*sigma_OmHIbHIr,3)))
+        print('\nReduced Chi^2 :' + str(model.ChiSquare(Pk_rec[kbin_cut],pkmod_fit[kbin_cut],C,dof=len(k[kbin_cut]))))
+        det_sig = model.DetectionSigma(Pk_rec[kbin_cut],pkmod_fit[kbin_cut],C)
+
+        fig = plt.figure()
+        plt.errorbar(k,norm*np.abs(Pk_rec),norm*asymmetric_error,ls='none',marker='o',label=r'$N_{\rm fg}=%s$'%N_fg,markersize=10)
+        plt.scatter(k[Pk_rec<0],norm[Pk_rec<0]*np.abs(Pk_rec[Pk_rec<0]),marker='o',facecolors='white',color='tab:blue',zorder=10,s=50)
+        plt.errorbar(k+0.001,norm*np.abs(Pk_rec),norm*sig_err,ls='none',marker='o',label='Analytical errors',markersize=10,color='tab:orange')
+        plt.scatter(k[Pk_rec<0]+0.001,norm[Pk_rec<0]*np.abs(Pk_rec[Pk_rec<0]),marker='o',facecolors='white',color='tab:orange',zorder=10,s=50)
+        plt.plot(k,norm*pkmod,color='gray',ls='--',label=r'Model [$\Omega_{\rm HI}b_{\rm HI} = %s \times 10^{-3}]$'%np.round(OmegaHIbHI*1e3,2))
+        plt.plot(k,norm*pkmod_fit,color='black',ls='--',label=r'Model [$\Omega_{\rm HI}b_{\rm HI} = %s \times 10^{-3}]$'%np.round(OmHIbHIr_fit*1e3,2))
+        if norm[0]==1.0: plt.yscale('log')
+        plt.axhline(0,lw=0.8,color='black')
+        plt.axvspan(kbins[0],kmincut,color='red',alpha=0.4)
+        plt.axvspan(kmaxcut,kbins[-1],color='red',alpha=0.4)
+        plt.xlim(kbins[0],kbins[-1])
+        plt.ylim(bottom=np.min(norm*pkmod_fit))
+        plt.legend(fontsize=16,loc='upper right',frameon=True,framealpha=1)
+        plt.title('MeerKAT x ' + gal_cat)
+        plt.xlabel(r'$k\,[h\,{\rm Mpc}^{-1}]$')
+        if norm[0]==1.0: plt.ylabel(r'$P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-3}{\rm Mpc}^{3}]$')
+        else: plt.ylabel(r'$k^2\,P_{\rm g,HI}(k)\,[{\rm mK}\,h^{-1}{\rm Mpc}]$')
+        fig.savefig(ps_dir / f'omegab_fits_{suffix}.pdf', **fig_kwargs)
 
 
-
-#survey = '2019'
-#gal_cat = 'wigglez'
-#gal_cat = 'cmass'
-
-# survey = '2021'
-# gal_cat = 'gama'
-
-# if gal_cat=='cmass' or gal_cat=='wigglez': N_fgs = [12,10,8,15,6]
-# if gal_cat=='gama': N_fgs = [8,12,6,10,15]
-
-# N_fgs = [10,8,12,6,5,7,9,11,13,14,15,16,17,18,19,20]
-
-#if gal_cat=='cmass': kcuts = [0.052,0.031,0.15,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
-#if gal_cat=='gama': kcuts = [0.052,0.031,0.175,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
-kcuts = [0.052,0.031,0.175,None] #[kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
-
-#kcuts = None
-
-'''
-tukey_alpha = 0.1
-for i in range(len(N_fgs)):
-    RunPipeline(survey,gal_cat,N_fgs[i],kcuts=kcuts,do2DTF=do2DTF,doHIauto=doHIauto)
-'''
+# [kperpmin,kparamin,kperpmax,kparamax] (exclude areas of k-space from spherical average)
+kcuts = [0.052,0.031,0.175,None]
 
 for i in range(len(args.tukey_alphas)):
     RunPipeline(
@@ -732,8 +783,3 @@ for i in range(len(args.tukey_alphas)):
         out_dir=args.out_dir,
         tukey_alpha=args.tukey_alphas[i]
     )
-
-# FIXME: I need to add some code ported from the notebook to compute the final
-#        power spectra with the transfer function corrections applied.
-#        I also need to add some code to save plots so we know what the outputs
-#        look like.
